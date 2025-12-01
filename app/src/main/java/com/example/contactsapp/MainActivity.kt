@@ -277,6 +277,13 @@ fun AddContactScreen(viewModel: ContactViewModel, navController: NavController) 
             Spacer(modifier = Modifier.height(16.dp))
 
             Button(onClick = {
+                if (imageUri == null) {
+                    imageUri = Uri.Builder().scheme("android.resource")
+                        .authority(context.packageName)
+                        .appendPath(context.resources.getResourceTypeName(R.drawable.placeholder))
+                        .appendPath(context.resources.getResourceEntryName(R.drawable.placeholder))
+                        .build()
+                }
                 imageUri?.let {
                     val internalPath = copyUriToInternalStorage(context, it, "$name.jpg")
                     internalPath?.let { path ->
