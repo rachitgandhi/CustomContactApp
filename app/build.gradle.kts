@@ -67,6 +67,8 @@ dependencies {
     implementation(libs.androidx.runtime.livedata)
     implementation(libs.androidx.lifecycle.livedata.ktx)
 
+    implementation(libs.mlkit)
+
     annotationProcessor(libs.androidx.room.compiler)
     ksp (libs.androidx.room.compiler)
 }
