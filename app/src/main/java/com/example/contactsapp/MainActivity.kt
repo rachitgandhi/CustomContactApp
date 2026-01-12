@@ -2,12 +2,16 @@ package com.example.contactsapp
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.Image
@@ -62,6 +66,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -69,8 +74,20 @@ import androidx.navigation.compose.rememberNavController
 import androidx.room.Room
 import coil.compose.rememberAsyncImagePainter
 import com.example.contactsapp.ui.theme.Orange40
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+private var currentPhotoPath: String? = null
+private var recognizeTextFromImage: String = ""
+private lateinit var requestPermissionLauncher: ActivityResultLauncher<String>
+private lateinit var takePictureLauncher: ActivityResultLauncher<Uri>
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,6 +99,25 @@ class MainActivity : ComponentActivity() {
         val repository = ContactRepository(database.contactDao())
 
         val viewModel: ContactViewModel by viewModels { ContactViewModelFactory(repository) }
+
+        requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            isGranted ->
+            if (isGranted) {
+                CaptureImage(applicationContext)
+            } else {
+                Toast.makeText(this, "Camera permission denied", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        takePictureLauncher = registerForActivityResult(ActivityResultContracts.TakePicture()) {
+                success ->
+            if (success) {
+                currentPhotoPath?.let { path ->
+                    val bitmap = BitmapFactory.decodeFile(path)
+                    recognizeText(bitmap, applicationContext)
+                }
+            }
+        }
 
         setContent {
             val navController = rememberNavController()
@@ -277,6 +313,14 @@ fun AddContactScreen(viewModel: ContactViewModel, navController: NavController) 
             Spacer(modifier = Modifier.height(16.dp))
 
             Button(onClick = {
+                requestPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                email = recognizeTextFromImage
+            }, colors = ButtonDefaults.buttonColors(Orange40)) {
+                Text(text = "Capture contact details")
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(onClick = {
                 if (imageUri == null) {
                     imageUri = Uri.Builder().scheme("android.resource")
                         .authority(context.packageName)
@@ -300,6 +344,38 @@ fun AddContactScreen(viewModel: ContactViewModel, navController: NavController) 
         
     }
 
+}
+
+private fun createImageFile(): File {
+    val timestamp: String = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+    val storageDir: File? = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+    return File.createTempFile("JPEG_${timestamp}_", ".jpg", storageDir).apply {
+        currentPhotoPath = absolutePath
+    }
+}
+
+private fun CaptureImage(context: Context) {
+    val photoFile: File? = try {
+        createImageFile()
+    } catch (ex: IOException) {
+        Toast.makeText(context, "Error occurred while creating the file", Toast.LENGTH_SHORT).show()
+        null
+    }
+    photoFile?.also {
+        val photoUri: Uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", it)
+        takePictureLauncher.launch(photoUri)
+    }
+}
+
+private fun recognizeText(bitmap: Bitmap, context: Context) {
+    val image = InputImage.fromBitmap(bitmap, 0)
+    val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+
+    recognizer.process(image).addOnSuccessListener { ocrText ->
+        recognizeTextFromImage = ocrText.text
+    } .addOnFailureListener { e ->
+        Toast.makeText(context, "Error reading text", Toast.LENGTH_SHORT).show()
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
