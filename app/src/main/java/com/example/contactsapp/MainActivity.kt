@@ -177,13 +177,13 @@ fun ContactListScreen(viewModel: ContactViewModel, navController: NavController)
 
     Scaffold(
         topBar = {
-            TopAppBar(modifier = Modifier.height(48.dp), title = {
+            TopAppBar(modifier = Modifier.wrapContentHeight(Alignment.CenterVertically), title = {
                 Box(modifier = Modifier.fillMaxHeight().wrapContentHeight(Alignment.CenterVertically)) {
                     Text(text = "Contacts", fontSize = 18.sp)
                 }
             },
                 navigationIcon = {
-                    IconButton(onClick = { Toast.makeText(context,"Add Contact", Toast.LENGTH_SHORT).show()}) {
+                    IconButton(onClick = { Toast.makeText(context,"Contact List", Toast.LENGTH_SHORT).show()}) {
                         Icon(painter = painterResource(id = R.drawable.contacticon), contentDescription = null)
                     }
                 }, colors = TopAppBarDefaults.topAppBarColors(
@@ -240,7 +240,7 @@ fun AddContactScreen(viewModel: ContactViewModel, navController: NavController) 
     Scaffold(
         topBar = {
             TopAppBar(
-                modifier = Modifier.height(48.dp),
+                modifier = Modifier.wrapContentHeight(Alignment.CenterVertically),
                 title = {
                     Box(
                         modifier = Modifier.fillMaxSize().wrapContentHeight(Alignment.CenterVertically)) {
@@ -405,7 +405,7 @@ fun ContactDetailScreen(contact: Contact, viewModel: ContactViewModel, navContro
     val context = LocalContext.current.applicationContext
     Scaffold(
         topBar = {
-            TopAppBar(modifier = Modifier.height(48.dp), title = {
+            TopAppBar(modifier = Modifier.wrapContentHeight(Alignment.CenterVertically), title = {
                 Box(modifier = Modifier.fillMaxHeight().wrapContentHeight(Alignment.CenterVertically)) {
                     Text(text = "Contact Details", fontSize = 18.sp)
                 }
@@ -534,7 +534,7 @@ fun EditContactScreen(contact: Contact, viewModel: ContactViewModel, navControll
     Scaffold(
         topBar = {
             TopAppBar(
-                modifier = Modifier.height(48.dp),
+                modifier = Modifier.wrapContentHeight(Alignment.CenterVertically),
                 title = {
                     Box(
                         modifier = Modifier.fillMaxSize().wrapContentHeight(Alignment.CenterVertically)) {
