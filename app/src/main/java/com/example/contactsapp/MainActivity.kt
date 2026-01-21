@@ -1,5 +1,6 @@
 package com.example.contactsapp
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
@@ -16,6 +17,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,6 +33,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -253,7 +256,7 @@ fun AddContactScreen(viewModel: ContactViewModel, navController: NavController) 
                     titleContentColor = Color.White,
                     navigationIconContentColor = Color.White
                 )
-                )
+            )
         }
     ) { paddingValues ->
         Column(
@@ -311,13 +314,31 @@ fun AddContactScreen(viewModel: ContactViewModel, navController: NavController) 
                 )
             )
             Spacer(modifier = Modifier.height(16.dp))
+            
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(paddingValues)
+                    .padding(16.dp)
+                    .horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                content = {
+                    Button(onClick = {
+                        requestPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    }, colors = ButtonDefaults.buttonColors(Orange40)) {
+                        Text(text = "Capture details")
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
 
-            Button(onClick = {
-                requestPermissionLauncher.launch(android.Manifest.permission.CAMERA)
-                email = recognizeTextFromImage
-            }, colors = ButtonDefaults.buttonColors(Orange40)) {
-                Text(text = "Capture contact details")
-            }
+                    Button(onClick = {
+                        email = recognizeTextFromImage
+                    }, colors = ButtonDefaults.buttonColors(Orange40)) {
+                        Text(text = "Paste details")
+                    }
+                }
+            )
+
             Spacer(modifier = Modifier.height(16.dp))
 
             Button(onClick = {
