@@ -614,6 +614,30 @@ fun EditContactScreen(contact: Contact, viewModel: ContactViewModel, navControll
             )
             Spacer(modifier = Modifier.height(16.dp))
 
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(paddingValues)
+                    .padding(16.dp)
+                    .horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                content = {
+                    Button(onClick = {
+                        requestPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    }, colors = ButtonDefaults.buttonColors(Orange40)) {
+                        Text(text = "Capture details")
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Button(onClick = {
+                        email = recognizeTextFromImage
+                    }, colors = ButtonDefaults.buttonColors(Orange40)) {
+                        Text(text = "Paste details")
+                    }
+                }
+            )
+
             Button(onClick = {
                 val updateContact = contact.copy(image = imageUri, name = name, phoneNumber = phonenumber, email = email)
                 viewModel.updateContact(updateContact)
