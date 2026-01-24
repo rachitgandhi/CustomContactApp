@@ -1,17 +1,23 @@
 package com.example.contactsapp
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +33,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -62,6 +69,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -69,8 +77,20 @@ import androidx.navigation.compose.rememberNavController
 import androidx.room.Room
 import coil.compose.rememberAsyncImagePainter
 import com.example.contactsapp.ui.theme.Orange40
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+private var currentPhotoPath: String? = null
+private var recognizeTextFromImage: String = ""
+private lateinit var requestPermissionLauncher: ActivityResultLauncher<String>
+private lateinit var takePictureLauncher: ActivityResultLauncher<Uri>
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,6 +102,25 @@ class MainActivity : ComponentActivity() {
         val repository = ContactRepository(database.contactDao())
 
         val viewModel: ContactViewModel by viewModels { ContactViewModelFactory(repository) }
+
+        requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            isGranted ->
+            if (isGranted) {
+                CaptureImage(applicationContext)
+            } else {
+                Toast.makeText(this, "Camera permission denied", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        takePictureLauncher = registerForActivityResult(ActivityResultContracts.TakePicture()) {
+                success ->
+            if (success) {
+                currentPhotoPath?.let { path ->
+                    val bitmap = BitmapFactory.decodeFile(path)
+                    recognizeText(bitmap, applicationContext)
+                }
+            }
+        }
 
         setContent {
             val navController = rememberNavController()
@@ -138,13 +177,13 @@ fun ContactListScreen(viewModel: ContactViewModel, navController: NavController)
 
     Scaffold(
         topBar = {
-            TopAppBar(modifier = Modifier.height(48.dp), title = {
+            TopAppBar(modifier = Modifier.wrapContentHeight(Alignment.CenterVertically), title = {
                 Box(modifier = Modifier.fillMaxHeight().wrapContentHeight(Alignment.CenterVertically)) {
                     Text(text = "Contacts", fontSize = 18.sp)
                 }
             },
                 navigationIcon = {
-                    IconButton(onClick = { Toast.makeText(context,"Add Contact", Toast.LENGTH_SHORT).show()}) {
+                    IconButton(onClick = { Toast.makeText(context,"Contact List", Toast.LENGTH_SHORT).show()}) {
                         Icon(painter = painterResource(id = R.drawable.contacticon), contentDescription = null)
                     }
                 }, colors = TopAppBarDefaults.topAppBarColors(
@@ -201,7 +240,7 @@ fun AddContactScreen(viewModel: ContactViewModel, navController: NavController) 
     Scaffold(
         topBar = {
             TopAppBar(
-                modifier = Modifier.height(48.dp),
+                modifier = Modifier.wrapContentHeight(Alignment.CenterVertically),
                 title = {
                     Box(
                         modifier = Modifier.fillMaxSize().wrapContentHeight(Alignment.CenterVertically)) {
@@ -217,7 +256,7 @@ fun AddContactScreen(viewModel: ContactViewModel, navController: NavController) 
                     titleContentColor = Color.White,
                     navigationIconContentColor = Color.White
                 )
-                )
+            )
         }
     ) { paddingValues ->
         Column(
@@ -275,6 +314,32 @@ fun AddContactScreen(viewModel: ContactViewModel, navController: NavController) 
                 )
             )
             Spacer(modifier = Modifier.height(16.dp))
+            
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(paddingValues)
+                    .padding(16.dp)
+                    .horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                content = {
+                    Button(onClick = {
+                        requestPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    }, colors = ButtonDefaults.buttonColors(Orange40)) {
+                        Text(text = "Capture details")
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Button(onClick = {
+                        email = recognizeTextFromImage
+                    }, colors = ButtonDefaults.buttonColors(Orange40)) {
+                        Text(text = "Paste details")
+                    }
+                }
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             Button(onClick = {
                 if (imageUri == null) {
@@ -302,13 +367,45 @@ fun AddContactScreen(viewModel: ContactViewModel, navController: NavController) 
 
 }
 
+private fun createImageFile(): File {
+    val timestamp: String = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+    val storageDir: File? = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+    return File.createTempFile("JPEG_${timestamp}_", ".jpg", storageDir).apply {
+        currentPhotoPath = absolutePath
+    }
+}
+
+private fun CaptureImage(context: Context) {
+    val photoFile: File? = try {
+        createImageFile()
+    } catch (ex: IOException) {
+        Toast.makeText(context, "Error occurred while creating the file", Toast.LENGTH_SHORT).show()
+        null
+    }
+    photoFile?.also {
+        val photoUri: Uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", it)
+        takePictureLauncher.launch(photoUri)
+    }
+}
+
+private fun recognizeText(bitmap: Bitmap, context: Context) {
+    val image = InputImage.fromBitmap(bitmap, 0)
+    val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+
+    recognizer.process(image).addOnSuccessListener { ocrText ->
+        recognizeTextFromImage = ocrText.text
+    } .addOnFailureListener { e ->
+        Toast.makeText(context, "Error reading text", Toast.LENGTH_SHORT).show()
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ContactDetailScreen(contact: Contact, viewModel: ContactViewModel, navController: NavController) {
     val context = LocalContext.current.applicationContext
     Scaffold(
         topBar = {
-            TopAppBar(modifier = Modifier.height(48.dp), title = {
+            TopAppBar(modifier = Modifier.wrapContentHeight(Alignment.CenterVertically), title = {
                 Box(modifier = Modifier.fillMaxHeight().wrapContentHeight(Alignment.CenterVertically)) {
                     Text(text = "Contact Details", fontSize = 18.sp)
                 }
@@ -437,7 +534,7 @@ fun EditContactScreen(contact: Contact, viewModel: ContactViewModel, navControll
     Scaffold(
         topBar = {
             TopAppBar(
-                modifier = Modifier.height(48.dp),
+                modifier = Modifier.wrapContentHeight(Alignment.CenterVertically),
                 title = {
                     Box(
                         modifier = Modifier.fillMaxSize().wrapContentHeight(Alignment.CenterVertically)) {
@@ -516,6 +613,30 @@ fun EditContactScreen(contact: Contact, viewModel: ContactViewModel, navControll
                 )
             )
             Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(paddingValues)
+                    .padding(16.dp)
+                    .horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                content = {
+                    Button(onClick = {
+                        requestPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    }, colors = ButtonDefaults.buttonColors(Orange40)) {
+                        Text(text = "Capture details")
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Button(onClick = {
+                        email = recognizeTextFromImage
+                    }, colors = ButtonDefaults.buttonColors(Orange40)) {
+                        Text(text = "Paste details")
+                    }
+                }
+            )
 
             Button(onClick = {
                 val updateContact = contact.copy(image = imageUri, name = name, phoneNumber = phonenumber, email = email)
