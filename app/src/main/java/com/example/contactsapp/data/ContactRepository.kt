@@ -1,4 +1,4 @@
-package com.example.contactsapp
+package com.example.contactsapp.data
 
 import kotlinx.coroutines.flow.Flow
 
@@ -17,5 +17,4 @@ class ContactRepository(private val contactDao: ContactDao) {
     suspend fun delete(contact: Contact) {
         contactDao.delete(contact)
     }
-
 }

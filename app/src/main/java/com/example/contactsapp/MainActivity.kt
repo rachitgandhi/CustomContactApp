@@ -1,669 +1,131 @@
 package com.example.contactsapp
 
 import android.Manifest
-import android.annotation.SuppressLint
-import android.content.Context
-import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
-import android.os.Environment
 import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
-import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.room.Room
-import coil.compose.rememberAsyncImagePainter
-import com.example.contactsapp.ui.theme.Orange40
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-
-private var currentPhotoPath: String? = null
-private var recognizeTextFromImage: String = ""
-private lateinit var requestPermissionLauncher: ActivityResultLauncher<String>
-private lateinit var takePictureLauncher: ActivityResultLauncher<Uri>
+import com.example.contactsapp.data.ContactDatabase
+import com.example.contactsapp.data.ContactRepository
+import com.example.contactsapp.ui.screens.AddContactScreen
+import com.example.contactsapp.ui.screens.ContactDetailScreen
+import com.example.contactsapp.ui.screens.ContactListScreen
+import com.example.contactsapp.ui.screens.EditContactScreen
+import com.example.contactsapp.ui.theme.ContactsAppTheme
+import com.example.contactsapp.ui.viewmodel.ContactViewModel
+import com.example.contactsapp.ui.viewmodel.ContactViewModelFactory
+import com.example.contactsapp.util.ImageUtils
 
 class MainActivity : ComponentActivity() {
+
+    private var currentPhotoPath: String? = null
+    private var recognizeTextFromImage by mutableStateOf("")
+
+    private lateinit var requestPermissionLauncher: ActivityResultLauncher<String>
+    private lateinit var takePictureLauncher: ActivityResultLauncher<Uri>
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val database = Room.databaseBuilder(applicationContext,
-            ContactDatabase::class.java, "contact_database").build()
+        val database = Room.databaseBuilder(
+            applicationContext,
+            ContactDatabase::class.java,
+            "contact_database"
+        ).build()
 
         val repository = ContactRepository(database.contactDao())
-
         val viewModel: ContactViewModel by viewModels { ContactViewModelFactory(repository) }
 
-        requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-            isGranted ->
+        requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
             if (isGranted) {
-                CaptureImage(applicationContext)
+                captureImage()
             } else {
                 Toast.makeText(this, "Camera permission denied", Toast.LENGTH_SHORT).show()
             }
         }
 
-        takePictureLauncher = registerForActivityResult(ActivityResultContracts.TakePicture()) {
-                success ->
+        takePictureLauncher = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
             if (success) {
                 currentPhotoPath?.let { path ->
                     val bitmap = BitmapFactory.decodeFile(path)
-                    recognizeText(bitmap, applicationContext)
+                    ImageUtils.recognizeText(bitmap, applicationContext) { text ->
+                        recognizeTextFromImage = text
+                    }
                 }
             }
         }
 
         setContent {
-            val navController = rememberNavController()
-            NavHost(navController = navController, startDestination = "contactList") {
-                composable("contactList") {
-                    ContactListScreen(viewModel, navController)
+            ContactsAppTheme {
+                val navController = rememberNavController()
+                NavHost(navController = navController, startDestination = "contactList") {
+                    composable("contactList") {
+                        ContactListScreen(viewModel = viewModel, navController = navController)
                     }
-                composable("addContact") {
-                    AddContactScreen(viewModel, navController)
-                }
-                composable("contactDetail/{contactId}") { backStackEntry ->
-                    val contactId = backStackEntry.arguments?.getString("contactId")?.toInt()
-                    val contact = viewModel.allContacts.observeAsState(initial = emptyList()).value.find { it.id == contactId }
-                    contact?.let { ContactDetailScreen(it, viewModel, navController) }
-
-                }
-                composable("editContact/{contactId}") { backStackEntry ->
-                    val contactId = backStackEntry.arguments?.getString("contactId")?.toInt()
-                    val contact = viewModel.allContacts.observeAsState(initial = emptyList()).value.find { it.id == contactId }
-                    contact?.let { EditContactScreen(it, viewModel, navController) }
-
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun ContactItem(contact: Contact, onClick: () ->Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth()
-            .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp)
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(Color.White),
-        elevation = CardDefaults.elevatedCardElevation(4.dp)
-    ) {
-        Row(modifier = Modifier.fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Image(painter = rememberAsyncImagePainter(contact.image) , contentDescription = contact.name, modifier = Modifier.size(50.dp).clip(
-                CircleShape), contentScale = ContentScale.Crop)
-            Spacer(modifier = Modifier.width(16.dp))
-            Text(contact.name)
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ContactListScreen(viewModel: ContactViewModel, navController: NavController) {
-
-    val context = LocalContext.current.applicationContext
-
-    Scaffold(
-        topBar = {
-            TopAppBar(modifier = Modifier.wrapContentHeight(Alignment.CenterVertically), title = {
-                Box(modifier = Modifier.fillMaxHeight().wrapContentHeight(Alignment.CenterVertically)) {
-                    Text(text = "Contacts", fontSize = 18.sp)
-                }
-            },
-                navigationIcon = {
-                    IconButton(onClick = { Toast.makeText(context,"Contact List", Toast.LENGTH_SHORT).show()}) {
-                        Icon(painter = painterResource(id = R.drawable.contacticon), contentDescription = null)
+                    composable("addContact") {
+                        AddContactScreen(
+                            viewModel = viewModel,
+                            navController = navController,
+                            onRequestCameraPermission = {
+                                requestPermissionLauncher.launch(Manifest.permission.CAMERA)
+                            },
+                            recognizedText = recognizeTextFromImage
+                        )
                     }
-                }, colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Orange40,
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
-                )
-            )
-        }, floatingActionButton = {
-            FloatingActionButton(containerColor = Orange40,onClick = { navController.navigate("addContact") }) {
-                Icon(imageVector = Icons.Default.Add, contentDescription = "Add Contacts")
-            }
-        }
-    ) { paddingValues ->
-        val contacts by viewModel.allContacts.observeAsState(initial = emptyList())
-        LazyColumn(modifier = Modifier.padding(paddingValues)) {
-            items(contacts) { contact ->
-                ContactItem(contact = contact) {
-                    navController.navigate("contactDetail/${contact.id}")
-                }
-            }
-        }
-    }
-
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
-@Composable
-fun AddContactScreen(viewModel: ContactViewModel, navController: NavController) {
-
-    val context = LocalContext.current.applicationContext
-
-    var imageUri by remember {
-        mutableStateOf<Uri?>(null)
-    }
-
-    var name by remember {
-        mutableStateOf("")
-    }
-
-    var phonenumber by remember {
-        mutableStateOf("")
-    }
-
-    var email by remember {
-        mutableStateOf("")
-    }
-
-    val launcher = rememberLauncherForActivityResult(contract = ActivityResultContracts.GetContent()) {uri: Uri? ->
-        imageUri = uri
-    }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                modifier = Modifier.wrapContentHeight(Alignment.CenterVertically),
-                title = {
-                    Box(
-                        modifier = Modifier.fillMaxSize().wrapContentHeight(Alignment.CenterVertically)) {
-                        Text(text = "Add Contact", fontSize = 18.sp)
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = { Toast.makeText(context,"Add Contact", Toast.LENGTH_SHORT).show()}) {
-                        Icon(painter = painterResource(id = R.drawable.addcontact), contentDescription = null)
-                    }
-                }, colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Orange40,
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
-                )
-            )
-        }
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(paddingValues)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            imageUri?.let { uri ->
-                Image(painter = rememberAsyncImagePainter(uri), contentDescription = null,
-                    modifier = Modifier.size(128.dp).clip(CircleShape),
-                    contentScale = ContentScale.Crop)
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            Button(onClick = { launcher.launch("image/*")},
-                colors = ButtonDefaults.buttonColors(Orange40)) {
-                Text(text = "Choose Image")
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-
-            TextField(value = name, onValueChange = {name = it},
-                label = { Text(text = "Name") },
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
-                    focusedTextColor = Color.Black,
-                    unfocusedTextColor = Color.Black
-                )
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            TextField(value = phonenumber, onValueChange = {phonenumber = it},
-                label = { Text(text = "Phone Number") },
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
-                    focusedTextColor = Color.Black,
-                    unfocusedTextColor = Color.Black
-                )
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            TextField(value = email, onValueChange = {email = it},
-                label = { Text(text = "Email") },
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
-                    focusedTextColor = Color.Black,
-                    unfocusedTextColor = Color.Black
-                )
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(paddingValues)
-                    .padding(16.dp)
-                    .horizontalScroll(rememberScrollState()),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-                content = {
-                    Button(onClick = {
-                        requestPermissionLauncher.launch(Manifest.permission.CAMERA)
-                    }, colors = ButtonDefaults.buttonColors(Orange40)) {
-                        Text(text = "Capture details")
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Button(onClick = {
-                        email = recognizeTextFromImage
-                    }, colors = ButtonDefaults.buttonColors(Orange40)) {
-                        Text(text = "Paste details")
-                    }
-                }
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Button(onClick = {
-                if (imageUri == null) {
-                    imageUri = Uri.Builder().scheme("android.resource")
-                        .authority(context.packageName)
-                        .appendPath(context.resources.getResourceTypeName(R.drawable.placeholder))
-                        .appendPath(context.resources.getResourceEntryName(R.drawable.placeholder))
-                        .build()
-                }
-                imageUri?.let {
-                    val internalPath = copyUriToInternalStorage(context, it, "$name.jpg")
-                    internalPath?.let { path ->
-                        viewModel.addContact(path, name, phonenumber, email)
-                        navController.navigate("contactList") {
-                            popUpTo(0)
+                    composable("contactDetail/{contactId}") { backStackEntry ->
+                        val contactId = backStackEntry.arguments?.getString("contactId")?.toIntOrNull()
+                        val contacts by viewModel.allContacts.observeAsState(initial = emptyList())
+                        val contact = contacts.find { it.id == contactId }
+                        contact?.let {
+                            ContactDetailScreen(
+                                contact = it,
+                                viewModel = viewModel,
+                                navController = navController
+                            )
                         }
                     }
-                }
-            }, colors = ButtonDefaults.buttonColors(Orange40)) {
-                Text(text = "Add Contact")
-            }
-        }
-        
-    }
-
-}
-
-private fun createImageFile(): File {
-    val timestamp: String = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-    val storageDir: File? = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-    return File.createTempFile("JPEG_${timestamp}_", ".jpg", storageDir).apply {
-        currentPhotoPath = absolutePath
-    }
-}
-
-private fun CaptureImage(context: Context) {
-    val photoFile: File? = try {
-        createImageFile()
-    } catch (ex: IOException) {
-        Toast.makeText(context, "Error occurred while creating the file", Toast.LENGTH_SHORT).show()
-        null
-    }
-    photoFile?.also {
-        val photoUri: Uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", it)
-        takePictureLauncher.launch(photoUri)
-    }
-}
-
-private fun recognizeText(bitmap: Bitmap, context: Context) {
-    val image = InputImage.fromBitmap(bitmap, 0)
-    val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-
-    recognizer.process(image).addOnSuccessListener { ocrText ->
-        recognizeTextFromImage = ocrText.text
-    } .addOnFailureListener { e ->
-        Toast.makeText(context, "Error reading text", Toast.LENGTH_SHORT).show()
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ContactDetailScreen(contact: Contact, viewModel: ContactViewModel, navController: NavController) {
-    val context = LocalContext.current.applicationContext
-    Scaffold(
-        topBar = {
-            TopAppBar(modifier = Modifier.wrapContentHeight(Alignment.CenterVertically), title = {
-                Box(modifier = Modifier.fillMaxHeight().wrapContentHeight(Alignment.CenterVertically)) {
-                    Text(text = "Contact Details", fontSize = 18.sp)
-                }
-            },
-                navigationIcon = {
-                    IconButton(onClick = { Toast.makeText(context,"Contact Details", Toast.LENGTH_SHORT).show()}) {
-                        Icon(painter = painterResource(id = R.drawable.contactdetails), contentDescription = null)
-                    }
-                }, colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Orange40,
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
-                )
-            )
-        }, floatingActionButton = {
-            FloatingActionButton(containerColor = Orange40,onClick = { navController.navigate("editContact/${contact.id}") }) {
-                Icon(imageVector = Icons.Default.Edit, contentDescription = "Edit Contact")
-            }
-        }
-    ) { paddingValues ->
-        Column (modifier = Modifier.fillMaxWidth()
-            .padding(paddingValues)
-            .padding(16.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally) {
-            Card(modifier = Modifier.fillMaxWidth()
-                .padding(16.dp),
-                colors = CardDefaults.cardColors(Color.White),
-                 shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(8.dp)
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()
-                    .padding(16.dp),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally) {
-                    Image(painter = rememberAsyncImagePainter(contact.image), contentDescription = contact.name,
-                        modifier = Modifier.size(128.dp)
-                            .clip(CircleShape),
-                        contentScale = ContentScale.Crop)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Card(modifier = Modifier.fillMaxWidth()
-                        .padding(8.dp),
-                        colors = CardDefaults.cardColors(Color.White),
-                        shape = RoundedCornerShape(16.dp),
-                        elevation = CardDefaults.cardElevation(8.dp)
-                    ) {
-                        Row(modifier = Modifier.fillMaxWidth()
-                            .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Text("Name: ", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(contact.name, fontSize = 16.sp)
-                        }
-                    }
-                    Card(modifier = Modifier.fillMaxWidth()
-                        .padding(8.dp),
-                        colors = CardDefaults.cardColors(Color.White),
-                        shape = RoundedCornerShape(16.dp),
-                        elevation = CardDefaults.cardElevation(8.dp)
-                    ) {
-                        Row(modifier = Modifier.fillMaxWidth()
-                            .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Text("phone: ", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(contact.phoneNumber, fontSize = 16.sp)
-                        }
-                    }
-                    Card(modifier = Modifier.fillMaxWidth()
-                        .padding(8.dp),
-                        colors = CardDefaults.cardColors(Color.White),
-                        shape = RoundedCornerShape(16.dp),
-                        elevation = CardDefaults.cardElevation(8.dp)
-                    ) {
-                        Row(modifier = Modifier.fillMaxWidth()
-                            .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Text("Email: ", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(contact.email, fontSize = 16.sp)
+                    composable("editContact/{contactId}") { backStackEntry ->
+                        val contactId = backStackEntry.arguments?.getString("contactId")?.toIntOrNull()
+                        val contacts by viewModel.allContacts.observeAsState(initial = emptyList())
+                        val contact = contacts.find { it.id == contactId }
+                        contact?.let {
+                            EditContactScreen(
+                                contact = it,
+                                viewModel = viewModel,
+                                navController = navController,
+                                onRequestCameraPermission = {
+                                    requestPermissionLauncher.launch(Manifest.permission.CAMERA)
+                                },
+                                recognizedText = recognizeTextFromImage
+                            )
                         }
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(colors = ButtonDefaults.buttonColors(Orange40), onClick = {
-                viewModel.deleteContact(contact)
-                navController.navigate("contactList") {
-                    popUpTo(0)
-                }
-            }) {
-                Text("Delete Contact")
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun EditContactScreen(contact: Contact, viewModel: ContactViewModel, navController: NavController) {
-
-    val context = LocalContext.current.applicationContext
-    var imageUri by remember {
-        mutableStateOf(contact.image)
-    }
-
-    var name by remember {
-        mutableStateOf(contact.name)
-    }
-
-    var phonenumber by remember {
-        mutableStateOf(contact.phoneNumber)
-    }
-
-    var email by remember {
-        mutableStateOf(contact.email)
-    }
-
-    val launcher = rememberLauncherForActivityResult(contract = ActivityResultContracts.GetContent()) { uri: Uri? ->
-        uri?.let { newUri ->
-            val internalPath = copyUriToInternalStorage(context, newUri, "$name.jpg")
-            internalPath?.let { path -> imageUri = path }
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                modifier = Modifier.wrapContentHeight(Alignment.CenterVertically),
-                title = {
-                    Box(
-                        modifier = Modifier.fillMaxSize().wrapContentHeight(Alignment.CenterVertically)) {
-                        Text(text = "Edit Contact", fontSize = 18.sp)
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = { Toast.makeText(context,"Edit Contact", Toast.LENGTH_SHORT).show()}) {
-                        Icon(painter = painterResource(id = R.drawable.editcontact), contentDescription = null)
-                    }
-                }, colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Orange40,
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
-                )
-            )
-        }
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(paddingValues)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-                Image(
-                    painter = rememberAsyncImagePainter(imageUri), contentDescription = null,
-                    modifier = Modifier.size(128.dp).clip(CircleShape),
-                    contentScale = ContentScale.Crop)
-
-            Spacer(modifier = Modifier.height(12.dp))
-            Button(
-                onClick = { launcher.launch("image/*") },
-                colors = ButtonDefaults.buttonColors(Orange40)
-            ) {
-                Text(text = "Choose Image")
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-
-            TextField(
-                value = name, onValueChange = { name = it },
-                label = { Text(text = "Name") },
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
-                    focusedTextColor = Color.Black,
-                    unfocusedTextColor = Color.Black
-                )
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            TextField(
-                value = phonenumber, onValueChange = { phonenumber = it },
-                label = { Text(text = "Phone Number") },
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
-                    focusedTextColor = Color.Black,
-                    unfocusedTextColor = Color.Black
-                )
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            TextField(
-                value = email, onValueChange = { email = it },
-                label = { Text(text = "Email") },
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
-                    focusedTextColor = Color.Black,
-                    unfocusedTextColor = Color.Black
-                )
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(paddingValues)
-                    .padding(16.dp)
-                    .horizontalScroll(rememberScrollState()),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-                content = {
-                    Button(onClick = {
-                        requestPermissionLauncher.launch(Manifest.permission.CAMERA)
-                    }, colors = ButtonDefaults.buttonColors(Orange40)) {
-                        Text(text = "Capture details")
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Button(onClick = {
-                        email = recognizeTextFromImage
-                    }, colors = ButtonDefaults.buttonColors(Orange40)) {
-                        Text(text = "Paste details")
-                    }
-                }
-            )
-
-            Button(onClick = {
-                val updateContact = contact.copy(image = imageUri, name = name, phoneNumber = phonenumber, email = email)
-                viewModel.updateContact(updateContact)
-                navController.navigate("contactList"){
-                    popUpTo(0)
-                }
-            }, colors = ButtonDefaults.buttonColors(Orange40)) {
-                Text(text = "Update Contact")
-            }
+    private fun captureImage() {
+        val result = ImageUtils.createImageFile(this)
+        if (result != null) {
+            val (photoFile, path) = result
+            currentPhotoPath = path
+            val photoUri: Uri = FileProvider.getUriForFile(this, "${packageName}.provider", photoFile)
+            takePictureLauncher.launch(photoUri)
         }
     }
-}
-
-fun copyUriToInternalStorage(context: Context, uri: Uri, fileName: String): String? {
-
-    val file = File(context.filesDir, fileName)
-    return try {
-        context.contentResolver.openInputStream(uri)?.use { inputStream ->
-            FileOutputStream(file).use { outputStream ->
-                inputStream.copyTo(outputStream)
-            }
-        }
-        file.absolutePath
-    } catch (e: Exception) {
-        e.printStackTrace()
-        null
-    }
-
 }

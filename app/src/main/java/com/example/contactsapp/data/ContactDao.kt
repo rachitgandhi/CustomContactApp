@@ -1,4 +1,4 @@
-package com.example.contactsapp
+package com.example.contactsapp.data
 
 import androidx.room.Dao
 import androidx.room.Delete
